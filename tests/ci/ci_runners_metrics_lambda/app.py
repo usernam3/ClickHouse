@@ -10,7 +10,6 @@ import argparse
 import sys
 import json
 import time
-from collections import namedtuple
 from datetime import datetime
 from typing import Dict, List, Tuple
 
@@ -19,14 +18,14 @@ import requests  # type: ignore
 import boto3  # type: ignore
 from botocore.exceptions import ClientError  # type: ignore
 
-from lambda_shared import RUNNER_TYPE_LABELS
+from lambda_shared import (
+    RUNNER_TYPE_LABELS,
+    RunnerDescription,
+    RunnerDescriptions,
+    list_runners,
+)
 
 UNIVERSAL_LABEL = "universal"
-
-RunnerDescription = namedtuple(
-    "RunnerDescription", ["id", "name", "tags", "offline", "busy"]
-)
-RunnerDescriptions = List[RunnerDescription]
 
 
 def get_dead_runners_in_ec2(runners: RunnerDescriptions) -> RunnerDescriptions:
@@ -184,52 +183,6 @@ def get_access_token(jwt_token: str, installation_id: int) -> str:
     response.raise_for_status()
     data = response.json()
     return data["token"]  # type: ignore
-
-
-def list_runners(access_token: str) -> RunnerDescriptions:
-    headers = {
-        "Authorization": f"token {access_token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
-    per_page = 100
-    response = requests.get(
-        f"https://api.github.com/orgs/ClickHouse/actions/runners?per_page={per_page}",
-        headers=headers,
-    )
-    response.raise_for_status()
-    data = response.json()
-    total_runners = data["total_count"]
-    print("Expected total runners", total_runners)
-    runners = data["runners"]
-
-    # round to 0 for 0, 1 for 1..100, but to 2 for 101..200
-    total_pages = (total_runners - 1) // per_page + 1
-
-    print("Total pages", total_pages)
-    for i in range(2, total_pages + 1):
-        response = requests.get(
-            "https://api.github.com/orgs/ClickHouse/actions/runners"
-            f"?page={i}&per_page={per_page}",
-            headers=headers,
-        )
-        response.raise_for_status()
-        data = response.json()
-        runners += data["runners"]
-
-    print("Total runners", len(runners))
-    result = []
-    for runner in runners:
-        tags = [tag["name"] for tag in runner["labels"]]
-        desc = RunnerDescription(
-            id=runner["id"],
-            name=runner["name"],
-            tags=tags,
-            offline=runner["status"] == "offline",
-            busy=runner["busy"],
-        )
-        result.append(desc)
-
-    return result
 
 
 def group_runners_by_tag(
