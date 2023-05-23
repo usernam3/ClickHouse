@@ -19,16 +19,9 @@ import requests  # type: ignore
 import boto3  # type: ignore
 from botocore.exceptions import ClientError  # type: ignore
 
+from lambda_shared import RUNNER_TYPE_LABELS
+
 UNIVERSAL_LABEL = "universal"
-RUNNER_TYPE_LABELS = [
-    "builder",
-    "func-tester",
-    "func-tester-aarch64",
-    "fuzzer-unit-tester",
-    "stress-tester",
-    "style-checker",
-    "style-checker-aarch64",
-]
 
 RunnerDescription = namedtuple(
     "RunnerDescription", ["id", "name", "tags", "offline", "busy"]
