@@ -30,6 +30,8 @@
 #include <Common/randomSeed.h>
 #include <Common/formatReadable.h>
 #include <Common/CurrentMetrics.h>
+#include "Analyzer/IQueryTreeNode.h"
+#include "Analyzer/MatcherNode.h"
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -1004,7 +1006,17 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
                 planner_context->getMutableQueryContext(),
                 global_in_or_join_node.subquery_depth);
             temporary_table_expression_node->setAlias(join_right_table_expression->getAlias());
-            replacement_map.emplace(join_right_table_expression.get(), std::move(temporary_table_expression_node));
+
+            auto in_second_argument_query_node = std::make_shared<QueryNode>(Context::createCopy(query_context));
+            in_second_argument_query_node->setIsSubquery(true);
+            in_second_argument_query_node->getProjectionNode() = std::make_shared<ListNode>();
+            in_second_argument_query_node->getProjection().getNodes() = { std::make_shared<MatcherNode>() };
+            in_second_argument_query_node->getJoinTree() = std::move(temporary_table_expression_node);
+
+            QueryAnalysisPass query_analysis_pass;
+            query_analysis_pass.run(in_second_argument_query_node, query_context);
+
+            replacement_map.emplace(join_right_table_expression.get(), std::move(in_second_argument_query_node));
             continue;
         }
         else if (auto * in_function_node = global_in_or_join_node.query_node->as<FunctionNode>())
@@ -1017,7 +1029,17 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
             auto temporary_table_expression_node = executeSubqueryNode(in_function_subquery_node,
                 planner_context->getMutableQueryContext(),
                 global_in_or_join_node.subquery_depth);
-            in_function_subquery_node = std::move(temporary_table_expression_node);
+
+            auto in_second_argument_query_node = std::make_shared<QueryNode>(Context::createCopy(query_context));
+            in_second_argument_query_node->setIsSubquery(true);
+            in_second_argument_query_node->getProjectionNode() = std::make_shared<ListNode>();
+            in_second_argument_query_node->getProjection().getNodes() = { std::make_shared<MatcherNode>() };
+            in_second_argument_query_node->getJoinTree() = std::move(temporary_table_expression_node);
+
+            QueryAnalysisPass query_analysis_pass;
+            query_analysis_pass.run(in_second_argument_query_node, query_context);
+
+            in_function_subquery_node = std::move(in_second_argument_query_node);
         }
         else
         {
@@ -1064,9 +1086,8 @@ void StorageDistributed::read(
             storage_snapshot,
             remote_storage_id,
             remote_table_function_ptr);
-
-        query_ast = queryNodeToSelectQuery(query_tree_distributed);
         header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
+        query_ast = queryNodeToSelectQuery(query_tree_distributed);
     }
     else
     {
